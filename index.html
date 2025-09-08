@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Email Signature Generator</title>
+
+    <!-- Cropper.js CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+
+    <!-- Cropper.js JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -192,9 +199,87 @@
             margin-left: 20px;
         }
         
-        .instructions li {
-            margin-bottom: 5px;
-        }
+    .instructions li {
+        margin-bottom: 5px;
+    }
+
+    .file-download {
+        background: #e7f5e7;
+        border: 1px solid #a7e1a7;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+        font-size: 14px;
+        color: #0f5132;
+    }
+
+    .file-download strong {
+        color: #0f5132;
+    }
+
+    /* Cropping Modal Styles */
+    .crop-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 9999;
+    }
+
+    .crop-modal.show {
+        display: block;
+    }
+
+    .crop-content {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .crop-image {
+        max-width: 100%;
+        height: auto;
+        max-height: 400px;
+    }
+
+    .crop-controls {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .crop-btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .crop-btn-primary {
+        background: #008080;
+        color: white;
+    }
+
+    .crop-btn-secondary {
+        background: #f5b062;
+        color: white;
+    }
     </style>
 </head>
 <body>
@@ -224,6 +309,12 @@
                 </div>
                 
                 <div class="form-group">
+                    <label for="profileImageUpload">Profile Image Upload</label>
+                    <input type="file" id="profileImageUpload" accept="image/*" onchange="handleImageUpload(event)">
+                    <small style="color: #666; margin-top: 5px; display: block;">OR enter a URL below:</small>
+                </div>
+
+                <div class="form-group">
                     <label for="profileImage">Profile Image URL</label>
                     <input type="url" id="profileImage" placeholder="https://i.imgur.com/K5bOJ3c.png" value="https://i.imgur.com/K5bOJ3c.png">
                 </div>
@@ -237,6 +328,10 @@
                         <li>Click "Insert HTML" and paste the copied content</li>
                         <li>Save your signature</li>
                     </ol>
+                </div>
+
+                <div class="file-download">
+                    <strong>Note:</strong> Some email clients (like Gmail) may not display data URL images. If your signature doesn't show properly, save the cropped image as a PNG file using the "Save PNG" button in the crop modal and host it on a public site (like Imgur), then paste the URL into the Profile Image URL field.
                 </div>
             </div>
             
@@ -255,18 +350,75 @@
                 <div class="success-message" id="successMessage">
                     Signature HTML copied to clipboard!
                 </div>
+
+                <!-- Add "Crop Image" button when an uploaded image exists -->
+                <div class="button-group" id="cropButtonContainer" style="display: none; margin-top: 10px;">
+                    <button class="btn btn-secondary" onclick="showCropModal()">Crop Image</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Cropping Modal -->
+        <div class="crop-modal" id="cropModal">
+            <div class="crop-content">
+                <h3>Crop Your Profile Image</h3>
+                <img id="cropImage" class="crop-image" src="" alt="Image to crop">
+                <div class="crop-controls">
+                    <button class="crop-btn crop-btn-secondary" onclick="saveCroppedImage()">Save PNG</button>
+                    <button class="crop-btn crop-btn-secondary" onclick="cancelCrop()">Cancel</button>
+                    <button class="crop-btn crop-btn-primary" onclick="commitCrop()">Apply to Signature</button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // Handle image upload
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file.');
+                event.target.value = '';
+                return;
+            }
+
+            // Validate file size (max 5MB)
+            const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+            if (file.size > maxSize) {
+                alert('File size must be less than 5MB.');
+                event.target.value = '';
+                return;
+            }
+
+            try {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    // Store the data URL and update the URL field
+                    document.getElementById('profileImage').value = e.target.result;
+                    // Show crop button
+                    document.getElementById('cropButtonContainer').style.display = 'flex';
+                    // Store original image data for cropping
+                    window.originalImageData = e.target.result;
+                    // Update preview
+                    updatePreview();
+                };
+                reader.readAsDataURL(file);
+            } catch (error) {
+                console.error('Error reading file:', error);
+                alert('Error reading the selected file.');
+            }
+        }
+
         // Generate signature HTML
         function generateSignature() {
             const name = document.getElementById('name').value || '{{ Name }}';
             const email = document.getElementById('email').value || '{{ Email Address }}';
             const role = document.getElementById('role').value || '{{ Job Title }}';
             const profileImage = document.getElementById('profileImage').value || 'https://i.imgur.com/K5bOJ3c.png';
-            
+
             return `<div style="width: 600px; font-family: Arial, sans-serif; position: relative;">
     <img src="${profileImage}" alt="Profile Picture" width="110" style="width: 110px; height: 110px; border-radius: 50%; border: 6px solid #ffffff; position: absolute; top: 40px; left: 30px; z-index: 2;">
     
@@ -409,7 +561,125 @@
                 message.style.display = 'none';
             }, 3000);
         }
-        
+
+        // Show crop modal
+        function showCropModal() {
+            const modal = document.getElementById('cropModal');
+            const image = document.getElementById('cropImage');
+            const profileImageInput = document.getElementById('profileImage');
+
+            if (!window.originalImageData) {
+                alert('No image to crop. Please upload an image first.');
+                return;
+            }
+
+            image.src = window.originalImageData;
+            modal.classList.add('show');
+
+            // Initialize cropper when image loads
+            if (window.cropperInstance) {
+                window.cropperInstance.destroy();
+            }
+
+            image.onload = function() {
+                window.cropperInstance = new Cropper(image, {
+                    aspectRatio: 1, // Square aspect ratio for profile pictures
+                    viewMode: 1,
+                    scalable: true,
+                    zoomable: true,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                });
+            };
+        }
+
+        // Commit crop
+        function commitCrop() {
+            const canvas = window.cropperInstance.getCroppedCanvas({
+                width: 300,
+                height: 300,
+                minWidth: 256,
+                minHeight: 256,
+                maxWidth: 4096,
+                maxHeight: 4096,
+            });
+
+            if (canvas) {
+                // Get the cropped image as data URL
+                const croppedImageData = canvas.toDataURL('image/png');
+                document.getElementById('profileImage').value = croppedImageData;
+                updatePreview();
+
+                // Hide modal
+                document.getElementById('cropModal').classList.remove('show');
+
+                // Clean up cropper
+                if (window.cropperInstance) {
+                    window.cropperInstance.destroy();
+                    window.cropperInstance = null;
+                }
+            } else {
+                alert('Failed to crop image. Please try again.');
+            }
+        }
+
+        // Cancel crop
+        function cancelCrop() {
+            const modal = document.getElementById('cropModal');
+            modal.classList.remove('show');
+
+            // Clean up cropper
+            if (window.cropperInstance) {
+                window.cropperInstance.destroy();
+                window.cropperInstance = null;
+            }
+        }
+
+        // Save cropped image as PNG
+        function saveCroppedImage() {
+            if (!window.cropperInstance) {
+                alert('Cropper not found. Please wait for the image to load and crop it.');
+                return;
+            }
+
+            try {
+                const canvas = window.cropperInstance.getCroppedCanvas({
+                    width: 300,
+                    height: 300,
+                    minWidth: 256,
+                    minHeight: 256,
+                    maxWidth: 4096,
+                    maxHeight: 4096,
+                });
+
+                if (!canvas) {
+                    alert('Failed to get cropped canvas. Make sure you have selected an area to crop.');
+                    return;
+                }
+
+                canvas.toBlob(function(blob) {
+                    if (!blob) {
+                        alert('Failed to generate image file. Try again.');
+                        return;
+                    }
+
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'cropped-profile-image.png';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    alert('Cropped image saved successfully!');
+                }, 'image/png');
+            } catch (error) {
+                alert('Error saving cropped image: ' + error.message);
+            }
+        }
+
         // Add event listeners for real-time updates
         document.addEventListener('DOMContentLoaded', function() {
             const inputs = ['name', 'email', 'role', 'profileImage'];
