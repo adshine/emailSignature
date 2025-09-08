@@ -11,6 +11,9 @@
     <!-- Cropper.js JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 
+    <!-- html2canvas for PNG generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -349,10 +352,11 @@
                 <div class="button-group">
                     <button class="btn btn-primary" onclick="copySignature()">Copy Signature HTML</button>
                     <button class="btn btn-secondary" onclick="downloadSignature()">Download HTML File</button>
+                    <button class="btn btn-secondary" onclick="downloadSignaturePNG()">Download PNG</button>
                 </div>
                 
                 <div class="success-message" id="successMessage">
-                    Signature HTML copied to clipboard!
+                    Signature copied successfully!
                 </div>
 
                 <!-- Add "Crop Image" button when an uploaded image exists -->
@@ -596,7 +600,7 @@
     ${generateSignatureZoho()}
 </body>
 </html>`;
-            
+
             const blob = new Blob([signatureHTML], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -606,6 +610,62 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        // Download signature as PNG with max 600px width
+        async function downloadSignaturePNG() {
+            const preview = document.getElementById('preview');
+            const name = document.getElementById('name').value || 'signature';
+
+            try {
+                // Use html2canvas to render the signature as an image
+                const canvas = await html2canvas(preview, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,  // Higher resolution for crisp output
+                    useCORS: true,
+                    allowTaint: true,
+                    width: 600  // Render at 600px width
+                });
+
+                // Create a new canvas for final output
+                const outputCanvas = document.createElement('canvas');
+                const ctx = outputCanvas.getContext('2d');
+
+                // Calculate dimensions to maintain aspect ratio within 600px max width
+                const maxWidth = 600;
+                const sourceWidth = canvas.width;
+                const sourceHeight = canvas.height;
+                let targetWidth = maxWidth;
+                let targetHeight = Math.round((sourceHeight * maxWidth) / sourceWidth);
+
+                // If original is already 600px or less, use original size
+                if (sourceWidth <= maxWidth) {
+                    targetWidth = sourceWidth;
+                    targetHeight = sourceHeight;
+                }
+
+                // Set canvas dimensions
+                outputCanvas.width = targetWidth;
+                outputCanvas.height = targetHeight;
+
+                // Draw and scale the image
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+                // Create download link
+                const link = document.createElement('a');
+                link.download = `${name.replace(/\s+/g, '-')}-signature.png`;
+                link.href = outputCanvas.toDataURL('image/png');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                alert('PNG signature downloaded successfully! Image dimension: ' + targetWidth + 'x' + targetHeight + 'px');
+            } catch (error) {
+                console.error('PNG generation failed:', error);
+                alert('Failed to generate PNG: ' + error.message);
+            }
         }
         
         // Show success message
